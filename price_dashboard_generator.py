@@ -8,7 +8,7 @@ WORKSPACE_DIR        = r"D:\ASUS\Claude-Analysis\Open Brand Price Tracking"
 WEEKLY_PRICE_DB_FILE = os.path.join(WORKSPACE_DIR, "weekly_price_database.csv")
 TRACKED_HISTORY_FILE = os.path.join(WORKSPACE_DIR, "tracked_products_history.csv")
 MASTER_MAPPING_FILE  = os.path.join(WORKSPACE_DIR, "master_mapping.csv")
-DASHBOARD_HTML_FILE  = os.path.join(WORKSPACE_DIR, "Weekly_Price_Dashboard.html")
+DASHBOARD_HTML_FILE  = os.path.join(WORKSPACE_DIR, "index.html")
 
 # ── Vendor colors (fixed per brand) ─────────────────────────────────────────
 VENDOR_COLORS = {
@@ -341,31 +341,55 @@ def generate_dashboard():
                 if ps['key'] not in all_price_keys or ps['prod_df'].empty:
                     continue
                 pdf = ps['prod_df']
+                legend_label = str(ps['key'])
+                if len(legend_label) > 28:
+                    legend_label = legend_label[:26] + '…'
                 fig.add_trace(go.Scatter(
                     x=pdf['Date'].tolist(),
                     y=pdf['Average_Price'].tolist(),
                     mode='lines+markers',
-                    name=html_lib.escape(str(ps['key'])),
-                    line=dict(color=ps['color'], width=2.5),
-                    marker=dict(size=7, symbol=ps['marker'], color=ps['color']),
-                    hovertemplate='%{y:$,.2f}<extra>' + html_lib.escape(str(ps['key'])) + '</extra>'
+                    name=legend_label,
+                    line=dict(color=ps['color'], width=2.5, shape='spline', smoothing=0.6),
+                    marker=dict(size=8, symbol=ps['marker'], color=ps['color'],
+                                line=dict(color='white', width=1.5)),
+                    hovertemplate='<b>%{y:$,.0f}</b><extra>' + html_lib.escape(str(ps['key'])) + '</extra>'
                 ))
                 has_any_trace = True
 
             chart_id = f'chart-{tab_type}-{seg.replace(" ", "_")}'
             fig.update_layout(
-                xaxis_title='Date', yaxis_title='Average Price (USD)',
-                yaxis_tickprefix='$', height=360,
-                margin=dict(l=10, r=10, t=20, b=10),
+                xaxis_title=None, yaxis_title=None,
+                yaxis_tickfont=dict(size=11, color='#64748b'),
+                xaxis_tickfont=dict(size=11, color='#64748b'),
+                height=420,
+                autosize=True,
+                margin=dict(l=60, r=20, t=70, b=40),
                 hovermode='x unified',
-                legend=dict(orientation='h', yanchor='bottom', y=1.01,
-                            xanchor='left', x=0, font=dict(size=11)),
+                hoverlabel=dict(bgcolor='white', bordercolor='#e2e8f0',
+                                font=dict(size=12, color='#1e293b')),
+                legend=dict(
+                    orientation='h', xanchor='left', x=0, yanchor='bottom', y=1.02,
+                    font=dict(size=10.5, color='#334155'),
+                    bgcolor='rgba(0,0,0,0)', borderwidth=0,
+                    tracegroupgap=4,
+                ),
                 legend_itemclick=False,
                 legend_itemdoubleclick=False,
-                plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff',
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(family='Segoe UI, system-ui, sans-serif'),
             )
-            fig.update_xaxes(showgrid=True, gridcolor='#e2e8f0', zeroline=False)
-            fig.update_yaxes(showgrid=True, gridcolor='#e2e8f0', zeroline=False)
+            fig.update_xaxes(
+                showgrid=False, zeroline=False,
+                showline=True, linecolor='#e2e8f0', linewidth=1,
+                tickformat='%b %-d\n%Y',
+                ticks='outside', ticklen=4, tickcolor='#e2e8f0',
+            )
+            fig.update_yaxes(
+                showgrid=True, gridcolor='#f1f5f9', gridwidth=1,
+                zeroline=False, showline=False,
+                tickprefix='$', tickformat=',.0f',
+            )
 
             if not has_any_trace:
                 chart_html = '<div class="no-data-msg">此 Segment 尚無 Open Brand 價格資料</div>'
@@ -374,6 +398,7 @@ def generate_dashboard():
                     full_html=False,
                     include_plotlyjs=False,
                     div_id=chart_id,
+                    config={'responsive': True},
                 )
                 # Custom legend interaction: click=isolate, click again=add, dblclick=reset
                 chart_html += f'''<script>
@@ -538,21 +563,21 @@ def generate_dashboard():
   .seg-tab.active {{ color: #2563eb; border-bottom-color: #2563eb; }}
 
   /* ── Content ── */
-  .content {{ padding: 20px 24px; max-width: 1600px; margin: 0 auto; }}
+  .content {{ padding: 20px 24px; max-width: 100%; }}
   .nbnr-pane {{ display: none; }}
   .nbnr-pane.active {{ display: block; }}
 
   /* ── Panel top: chart + summary side by side ── */
   .panel-top {{
     display: grid;
-    grid-template-columns: 1fr 290px;
+    grid-template-columns: 1fr 260px;
     gap: 16px; margin-bottom: 16px;
   }}
   .chart-wrap {{
-    min-width: 0; overflow: hidden;
+    min-width: 0;
     background: #fff; border-radius: 10px;
     box-shadow: 0 1px 4px rgba(0,0,0,.08);
-    padding: 16px 16px 8px;
+    padding: 8px;
   }}
   .summary-wrap {{
     min-width: 0;
@@ -692,9 +717,15 @@ function switchNBNR(type, btn) {{
   document.querySelectorAll('.nbnr-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.nbnr-pane').forEach(p => p.classList.remove('active'));
-  document.getElementById('pane-' + type).classList.add('active');
+  var pane = document.getElementById('pane-' + type);
+  pane.classList.add('active');
   document.getElementById('tabs-NB').style.display = type === 'NB' ? 'flex' : 'none';
   document.getElementById('tabs-NR').style.display = type === 'NR' ? 'flex' : 'none';
+  // Resize visible chart
+  var visPanel = pane.querySelector('.seg-panel[style*="block"]');
+  if (visPanel) visPanel.querySelectorAll('.plotly-graph-div').forEach(function(gd) {{
+    if (window.Plotly) Plotly.Plots.resize(gd);
+  }});
 }}
 
 function switchSeg(btn) {{
@@ -708,8 +739,24 @@ function switchSeg(btn) {{
     p.style.display = 'none';
   }});
   var panel = document.getElementById(tabType + '-' + seg);
-  if (panel) panel.style.display = 'block';
+  if (panel) {{
+    panel.style.display = 'block';
+    // Resize all Plotly charts in this panel after it becomes visible
+    panel.querySelectorAll('.plotly-graph-div').forEach(function(gd) {{
+      if (window.Plotly) Plotly.Plots.resize(gd);
+    }});
+  }}
 }}
+// Resize all visible charts on initial load
+window.addEventListener('load', function() {{
+  document.querySelectorAll('.seg-panel').forEach(function(p) {{
+    if (p.style.display !== 'none') {{
+      p.querySelectorAll('.plotly-graph-div').forEach(function(gd) {{
+        if (window.Plotly) Plotly.Plots.resize(gd);
+      }});
+    }}
+  }});
+}});
 </script>
 
 </body>
