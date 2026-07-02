@@ -1,0 +1,51 @@
+GfK_Key,OB_Key,Score,Status
+ASUS ROG STRIX Core I7 RTX 4060,Asus ROG Strix Intel Core i9 14900HX Nvidia GeForce RTX 4060,70.0,Manual
+ASUS ROG ZEPHYRUS Ryzen 9 RTX 4060,Asus ROG Strix AMD Ryzen 9 7845HX Nvidia GeForce RTX 4060,74.0,Manual
+LENOVO LEGION 7 Core Ultra 9 RTX 5070,Lenovo Legion Pro 7 Intel Core Ultra 9 275HX Nvidia GeForce RTX 5070 Ti,76.0,Manual
+ASUS TUF GAMING Ryzen 7 RTX 4050,Asus TUF Gaming AMD Ryzen 7 7735HS Nvidia GeForce RTX 4050,76.0,Manual
+HP VICTUS Core I5 RTX 4050,HP Victus Intel Core i7 13700H Nvidia GeForce RTX 4050,76.0,Manual
+HP OMEN 16 Ryzen 9 RTX 5060,HP OMEN Max AMD Ryzen AI 7 350 Nvidia GeForce RTX 5060,89.0,Manual
+HP OMEN 16 Core I7 RTX 4060,HP Omen Intel Core i7 14700HX Nvidia GeForce RTX 4060,74.0,Manual
+MSI CYBORG Core I5 RTX 2050,MSI Cyborg Intel Core i5 12450H Nvidia GeForce RTX 2050,77.0,Manual
+MSI THIN Core I5 RTX 2050,MSI Thin Intel Core i5 12450H Nvidia GeForce RTX 2050,80.0,Manual
+ACER NITRO V Ryzen 7 RTX 4050,MSI Thin AMD Ryzen 7 7735HS Nvidia Geforce RTX 4050,71.0,Manual
+SAMSUNG GALAXY BOOK Core 7 GMA,Samsung Galaxy Book5 Pro Intel Core Ultra 7 258V Intel Arc Graphics 140V,65.0,Manual
+LENOVO IDEAPAD SLIM 5 Core 7 GMA,Lenovo IdeaPad Slim 5i Intel Core 7 150U Intel Graphics,72.0,Manual
+LENOVO IDEAPAD 5 Ryzen 7 AMD Oth.,Lenovo IdeaPad 5 AMD Ryzen AI 5 430 AMD Radeon 840M,73.0,Manual
+HP PAVILION Core 5 GMA,HP Pavilion Intel Core i5 1335U Intel Iris Xe Graphics,70.0,Manual
+HP OMNIBOOK 5 Ryzen 7 AI AMD Oth.,HP OmniBook 5 Qualcomm Snapdragon X Plus X1P-42-100 Intel Arc 130T,70.0,Manual
+ASUS ROG ZEPHYRUS Core Ultra 9 RTX 4070,Asus ROG Zephyrus G14 AMD Ryzen 9 8945HS Nvidia GeForce RTX 4070,0.0,Manual
+ASUS VIVOBOOK RTX Core 5 RTX 3050,Asus VivoBook Pro AMD Ryzen 9 6900HX Nvidia GeForce RTX 3050 Ti,0.0,Manual
+ASUS VIVOBOOK PRO Core Ultra 9 RTX 3050,Asus VivoBook Pro Intel Core Ultra 9 285H Nvidia GeForce RTX 4050,0.0,Manual
+ASUS VIVOBOOK PRO Core Ultra 7 RTX 3050,Asus VivoBook Pro AMD Ryzen 9 6900HX Nvidia GeForce RTX 3050 Ti,0.0,Manual
+HP HP Core I5 Intel Iris,HP - Intel Core i5 1335U Intel Iris Xe Graphics,95.0,Auto-Mapped
+HP HP Celeron GMA,HP HP 17,90.0,Auto-Mapped
+HP HP Pentium GMA,HP HP 17,90.0,Auto-Mapped
+HP HP Ryzen 5 AMD Oth.,HP HP 17,90.0,Auto-Mapped
+HP HP Core I3 GMA,HP HP 17,90.0,Auto-Mapped
+MICROSOFT SURFACE LAPTOP X Elite zthers,Microsoft Surface Laptop -,88.23529411764706,Auto-Mapped
+HP OMNIBOOK X FLIP Core Ultra 7 ARC,HP OmniBook X Flip Intel Core Ultra 7 256V Intel Arc Graphics 140V,95.0,Auto-Mapped
+HP ENVY X360 Ryzen 7 AMD Oth.,HP Envy x360 AMD Ryzen 7 5825U AMD Radeon,85.71428571428572,Auto-Mapped
+APPLE MACBOOK PRO Apple M Apple I GPU,Apple MacBook Pro Apple M5 Apple 10-Core GPU,88.88888888888889,Auto-Mapped
+HP ENVY X360 Core Ultra 7 GMA,HP Envy x360 Intel Core Ultra 7 155U Intel Graphics,87.96296296296296,Auto-Mapped
+HP OMNIBOOK 5 Core Ultra 7 GMA,HP OmniBook 5 Intel Core Ultra 7 258V,95.0,Auto-Mapped
+DELL INSPIRON 3 Core I5 Intel Iris,Dell Inspiron 3520 Intel Core i5 1235U Intel Iris Xe Graphics,92.12121212121212,Auto-Mapped
+ACER PREDATOR HELIOS Core Ultra 9 RTX 5070 Ti,Acer Predator Helios Neo Intel Core Ultra 9 275HX Nvidia GeForce RTX 5070 Ti,95.0,Auto-Mapped
+LENOVO IDEAPAD 1 Ryzen 5 AMD Oth.,Lenovo IdeaPad 1 AMD Ryzen 5 5500U AMD Radeon,87.5,Auto-Mapped
+HP HP Core I7 Intel Iris,HP HP 15 Intel Core i7 Intel Iris Xe Graphics,90.0,Auto-Mapped
+LENOVO LEGION 7 Core I9 RTX 4070,Lenovo Legion 5 Intel Core i9 14900HX Nvidia GeForce RTX 4070,92.625,Auto-Mapped
+HP VICTUS Core I5 RTX 3050,HP Victus Intel Core i5 13420H Nvidia GeForce RTX 3050,95.0,Auto-Mapped
+HP VICTUS Ryzen 7 RTX 4050,HP Victus AMD Ryzen 5 8645HS Nvidia GeForce RTX 4050,92.20588235294116,Auto-Mapped
+ASUS ROG ZEPHYRUS Ryzen 9 RTX 4070,Asus ROG Zephyrus G14 AMD Ryzen 9 8945HS Nvidia GeForce RTX 4070,95.0,Auto-Mapped
+SAMSUNG GALAXY PRO 360 Core Ultra 7 ARC,Samsung Galaxy Book4 Pro OLED Intel Core Ultra 7 155H Intel ARC Graphics,89.86486486486486,Auto-Mapped
+APPLE MACBOOK AIR Apple M Apple I GPU,Apple MacBook Air - M5 Apple M5 Apple 10-Core GPU,86.7391304347826,Auto-Mapped
+MICROSOFT SURFACE LAPTOP X Plus zthers,Microsoft Surface Laptop -,91.2,Auto-Mapped
+ASUS ROG STRIX Core I9 RTX 4060,Asus ROG Strix Intel Core i9 14900HX Nvidia GeForce RTX 4060,95.0,Auto-Mapped
+HP ENVY X360 Ryzen 5 AMD Oth.,HP Envy x360 AMD Ryzen 5 8640HS AMD Radeon 760M,85.71428571428572,Auto-Mapped
+LENOVO IDEAPAD SLIM 3 Ryzen 7 AMD Oth.,Lenovo IdeaPad Slim 3 AMD Ryzen 7 5825U AMD Radeon,89.1891891891892,Auto-Mapped
+LENOVO YOGA Core Ultra 9 RTX 4050,Lenovo Yoga 7 Intel Core Ultra 7 258V Nvidia GeForce RTX 4050,92.68292682926828,Auto-Mapped
+ASUS ZENBOOK Core Ultra 7 ARC,Asus ZenBook Duo Intel Core Ultra 7 255H Intel Arc Graphics,95.0,Auto-Mapped
+APPLE MACBOOK NEO Apple A zthers,Apple MacBook Neo - A18 Pro Apple A18 Pro Apple 5-Core GPU,0.0,Manual
+LENOVO YOGA 7 Core Ultra 7 GMA,Lenovo Yoga 7 Intel Core Ultra 7 256V Intel Arc Graphics 140V,0.0,Manual
+HP VICTUS Ryzen 5 AMD R9-RX,HP Victus AMD Ryzen 5 7535HS AMD Radeon RX 6550M,0.0,Manual
+ASUS ROG ZEPHYRUS Core I7 RTX 4070,Asus ROG Zephyrus G14 AMD Ryzen 9 8945HS Nvidia GeForce RTX 4070,0.0,Manual
