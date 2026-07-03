@@ -9,6 +9,7 @@ WEEKLY_PRICE_DB_FILE = os.path.join(WORKSPACE_DIR, "weekly_price_database.csv")
 TRACKED_HISTORY_FILE = os.path.join(WORKSPACE_DIR, "tracked_products_history.csv")
 MASTER_MAPPING_FILE  = os.path.join(WORKSPACE_DIR, "master_mapping.csv")
 DASHBOARD_HTML_FILE  = os.path.join(WORKSPACE_DIR, "index.html")
+OPEN_BRAND_PATH      = r"D:\ASUS\GAP US Retail Data\Pricings.csv"
 
 # ── Vendor colors (fixed per brand) ─────────────────────────────────────────
 VENDOR_COLORS = {
@@ -233,6 +234,451 @@ def build_summary_html(prod_stats):
         )
 
     return '\n'.join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Market Overview — cross-brand price-change analysis (all vendors, all SKUs)
+# Computed directly from the raw Open Brand feed on every regeneration,
+# independent of the GfK top-5 tracking above. Compares each
+# (Part Number, Merchant) price series' first vs. last observed week within
+# the current file to avoid mix-shift bias from new/discontinued SKUs.
+# ══════════════════════════════════════════════════════════════════════════
+
+MKT_PRICE_LOW, MKT_PRICE_HIGH = 100, 15000   # sanity band; drops scrape errors
+MKT_UP_COLOR, MKT_DOWN_COLOR  = '#dc2626', '#16a34a'   # matches existing .up/.down
+
+
+def _mkt_clean_price(x):
+    if pd.isna(x):
+        return float('nan')
+    return float(str(x).replace('$', '').replace(',', ''))
+
+
+def _mkt_clean_pct(x):
+    if pd.isna(x) or str(x).strip() in ('', '-'):
+        return float('nan')
+    return float(str(x).replace('%', ''))
+
+
+def _mkt_gpu_bucket(g):
+    if pd.isna(g) or g == '-':
+        return 'Unknown/None'
+    g = str(g)
+    if 'RTX' in g or 'GTX' in g:
+        return 'Nvidia 獨立顯卡 (RTX/GTX)'
+    if g.startswith('AMD Radeon') and 'RX' in g:
+        return 'AMD 獨立顯卡 (RX)'
+    if g.startswith('AMD Radeon'):
+        return 'AMD 整合顯卡'
+    if g.startswith('Intel'):
+        return 'Intel 整合顯卡/Arc'
+    if g.startswith('Apple'):
+        return 'Apple 整合顯卡'
+    if g.startswith('Qualcomm'):
+        return 'Qualcomm 整合顯卡'
+    return '其他'
+
+
+def _mkt_cpu_brand(c):
+    if pd.isna(c) or c == '-':
+        return 'Unknown'
+    c = str(c)
+    for prefix in ('Intel', 'AMD', 'Apple', 'Qualcomm'):
+        if c.startswith(prefix):
+            return prefix
+    return 'Other'
+
+
+def _mkt_cpu_tier(c):
+    if pd.isna(c) or c == '-':
+        return 'Unknown'
+    c = str(c)
+    if 'Celeron' in c or 'N100' in c or 'N4' in c or 'N9' in c or 'Pentium' in c:
+        return '入門 (Celeron/N系列/Pentium)'
+    if ('Ultra 9' in c or 'i9' in c or 'Ryzen 9' in c or 'M4 Pro' in c or 'M5 Pro' in c
+            or 'M4 Max' in c or 'M5 Max' in c or 'M3 Max' in c or 'M3 Pro' in c):
+        return '高階 (i9/Ultra9/Ryzen9/Pro·Max)'
+    if 'Ultra 7' in c or 'i7' in c or 'Ryzen 7' in c or ('Apple M' in c and 'Pro' not in c and 'Max' not in c):
+        return '中高階 (i7/Ultra7/Ryzen7/Apple M)'
+    if 'Ultra 5' in c or 'i5' in c or 'Ryzen 5' in c:
+        return '中階 (i5/Ultra5/Ryzen5)'
+    if 'Snapdragon' in c:
+        return 'ARM (Snapdragon)'
+    return '其他/低階'
+
+
+def load_market_overview_data():
+    cols = ['Category', 'Part Number', 'Brand', 'Merchant', 'Net Price', 'Promo %',
+            'On Promo', 'Week', 'Date', 'Product Family', 'Market Segment',
+            'Form Factor', 'Processor', 'GPU', 'Country']
+    df = pd.read_csv(OPEN_BRAND_PATH, usecols=cols, low_memory=False)
+    if 'Category' in df.columns:
+        df = df[df['Category'] == 'Notebooks'].copy()
+    df['NetPrice'] = df['Net Price'].apply(_mkt_clean_price)
+    df = df[(df['NetPrice'] >= MKT_PRICE_LOW) & (df['NetPrice'] <= MKT_PRICE_HIGH)].copy()
+    df['PromoPct'] = df['Promo %'].apply(_mkt_clean_pct)
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['CPU_Brand']  = df['Processor'].apply(_mkt_cpu_brand)
+    df['CPU_Tier']   = df['Processor'].apply(_mkt_cpu_tier)
+    df['GPU_Bucket'] = df['GPU'].apply(_mkt_gpu_bucket)
+
+    weekly = df.groupby('Week').agg(
+        AvgNetPrice=('NetPrice', 'mean'),
+        MedNetPrice=('NetPrice', 'median'),
+        AvgPromoPct=('PromoPct', 'mean'),
+        OnPromoShare=('On Promo', lambda s: (s == 'Y').mean() * 100),
+        N=('NetPrice', 'size'),
+    ).reset_index()
+
+    key_cols = ['Part Number', 'Merchant']
+    cs    = df.sort_values(key_cols + ['Week'])
+    first = cs.groupby(key_cols).first()
+    last  = cs.groupby(key_cols).last()
+
+    matched = pd.DataFrame({
+        'FirstWeek': first['Week'], 'LastWeek': last['Week'],
+        'FirstPrice': first['NetPrice'], 'LastPrice': last['NetPrice'],
+        'Brand': first['Brand'], 'Product Family': first['Product Family'],
+        'Market Segment': first['Market Segment'], 'Form Factor': first['Form Factor'],
+        'CPU_Brand': first['CPU_Brand'], 'CPU_Tier': first['CPU_Tier'],
+        'GPU_Bucket': first['GPU_Bucket'],
+        'FirstPromoPct': first['PromoPct'], 'LastPromoPct': last['PromoPct'],
+    }).reset_index()
+
+    matched = matched[matched['LastWeek'] > matched['FirstWeek']].copy()
+    matched['PriceChange']    = matched['LastPrice'] - matched['FirstPrice']
+    matched['PriceChangePct'] = matched['PriceChange'] / matched['FirstPrice'] * 100
+    matched['PromoPtsChange'] = matched['LastPromoPct'] - matched['FirstPromoPct']
+
+    top_brand_names = df['Brand'].value_counts().head(8).index.tolist()
+    weekly_by_brand = (
+        df[df['Brand'].isin(top_brand_names)]
+        .groupby(['Week', 'Brand'])['NetPrice'].mean()
+        .unstack()
+    )
+
+    return {'weekly': weekly, 'matched': matched, 'weekly_by_brand': weekly_by_brand}
+
+
+def _mkt_summarize(matched, col, min_n=15):
+    g = matched.groupby(col).agg(
+        N=('PriceChangePct', 'size'),
+        ShareUp=('PriceChange', lambda s: (s > 0).mean() * 100),
+        ShareDown=('PriceChange', lambda s: (s < 0).mean() * 100),
+        MeanChangePct=('PriceChangePct', 'mean'),
+        MedianChangePct=('PriceChangePct', lambda s: s[s != 0].median() if (s != 0).any() else float('nan')),
+        AvgFirstPrice=('FirstPrice', 'mean'),
+        AvgLastPrice=('LastPrice', 'mean'),
+        AvgPromoPtsChange=('PromoPtsChange', 'mean'),
+    )
+    return g[g['N'] >= min_n].sort_values('MeanChangePct', ascending=False)
+
+
+def _mkt_bar_fig(labels, values, xlabel='平均價格變化 %'):
+    colors = [MKT_UP_COLOR if v > 0 else MKT_DOWN_COLOR for v in values]
+    fig = go.Figure(go.Bar(
+        x=list(values), y=list(labels), orientation='h',
+        marker_color=colors,
+        text=[f'{v:+.1f}%' for v in values],
+        textposition='outside', textfont=dict(size=11),
+        hovertemplate='<b>%{y}</b>: %{x:+.2f}%<extra></extra>',
+    ))
+    fig.update_layout(
+        height=max(260, 32 * len(labels) + 90),
+        margin=dict(l=10, r=48, t=10, b=36),
+        xaxis_title=xlabel,
+        xaxis=dict(zeroline=True, zerolinecolor='#cbd5e1', zerolinewidth=1.5,
+                   gridcolor='#f1f5f9', tickfont=dict(size=11, color='#64748b')),
+        yaxis=dict(autorange='reversed', tickfont=dict(size=11.5, color='#334155')),
+        plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(family='Segoe UI, system-ui, sans-serif'),
+    )
+    return fig
+
+
+def _mkt_trend_fig(weekly):
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=weekly['Week'], y=weekly['OnPromoShare'], name='促銷佔比 %',
+                          marker_color='rgba(220,38,38,.16)', yaxis='y2'))
+    fig.add_trace(go.Scatter(x=weekly['Week'], y=weekly['AvgNetPrice'], name='平均淨價',
+                              mode='lines+markers', line=dict(color='#2563eb', width=2.5),
+                              marker=dict(size=6)))
+    fig.add_trace(go.Scatter(x=weekly['Week'], y=weekly['MedNetPrice'], name='中位價',
+                              mode='lines+markers', line=dict(color='#7c3aed', width=2, dash='dot'),
+                              marker=dict(size=5)))
+    fig.update_layout(
+        height=380, margin=dict(l=55, r=55, t=40, b=40),
+        xaxis=dict(title='週次 (Week #)', tickfont=dict(size=11, color='#64748b'), showgrid=False),
+        yaxis=dict(title='價格 (USD/CAD)', tickprefix='$', tickformat=',.0f',
+                   tickfont=dict(size=11, color='#64748b'), gridcolor='#f1f5f9'),
+        yaxis2=dict(title='促銷佔比 %', overlaying='y', side='right', range=[0, 60],
+                    tickfont=dict(size=11, color='#64748b'), showgrid=False),
+        legend=dict(orientation='h', x=0, y=1.14, font=dict(size=11)),
+        plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(family='Segoe UI, system-ui, sans-serif'),
+    )
+    return fig
+
+
+def _mkt_brand_trend_fig(weekly_by_brand):
+    fig = go.Figure()
+    for brand in weekly_by_brand.columns:
+        color = VENDOR_COLORS.get(str(brand).upper(), DEFAULT_COLOR)
+        width = 3 if str(brand).upper() == 'ASUS' else 1.6
+        fig.add_trace(go.Scatter(
+            x=weekly_by_brand.index, y=weekly_by_brand[brand], name=brand,
+            mode='lines+markers', line=dict(color=color, width=width), marker=dict(size=5),
+        ))
+    fig.update_layout(
+        height=360, margin=dict(l=55, r=20, t=30, b=40),
+        xaxis=dict(title='週次 (Week #)', tickfont=dict(size=11, color='#64748b'), showgrid=False),
+        yaxis=dict(title='平均成交價', tickprefix='$', tickformat=',.0f',
+                   tickfont=dict(size=11, color='#64748b'), gridcolor='#f1f5f9'),
+        legend=dict(orientation='h', x=0, y=1.15, font=dict(size=10.5)),
+        plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(family='Segoe UI, system-ui, sans-serif'),
+    )
+    return fig
+
+
+def _mkt_pct_span(v):
+    if pd.isna(v):
+        return '<span class="neutral">—</span>'
+    cls  = 'up' if v > 0 else ('down' if v < 0 else 'neutral')
+    sign = '+' if v > 0 else ''
+    return f'<span class="{cls}">{sign}{v:.2f}%</span>'
+
+
+def _mkt_table(g, highlight=None):
+    highlight = highlight or set()
+    head = ('<thead><tr><th class="rowlabel">分類</th><th>組數</th><th>平均變化</th>'
+            '<th>中位變化(非零)</th><th>漲比例</th><th>跌比例</th>'
+            '<th>首週均價</th><th>末週均價</th><th>促銷變化(pts)</th></tr></thead>')
+    rows = []
+    for idx, r in g.iterrows():
+        hl = ' class="hl"' if idx in highlight else ''
+        rows.append(
+            f'<tr{hl}><td class="rowlabel">{html_lib.escape(str(idx))}</td>'
+            f'<td>{int(r["N"])}</td>'
+            f'<td>{_mkt_pct_span(r["MeanChangePct"])}</td>'
+            f'<td>{_mkt_pct_span(r["MedianChangePct"])}</td>'
+            f'<td>{r["ShareUp"]:.1f}%</td>'
+            f'<td>{r["ShareDown"]:.1f}%</td>'
+            f'<td>${r["AvgFirstPrice"]:,.0f}</td>'
+            f'<td>${r["AvgLastPrice"]:,.0f}</td>'
+            f'<td>{r["AvgPromoPtsChange"]:+.2f}</td></tr>'
+        )
+    return f'<table class="ov-table">{head}<tbody>{"".join(rows)}</tbody></table>'
+
+
+def build_market_overview():
+    """Compute + render the cross-brand 'Market Overview' tab set, live from Pricings.csv."""
+    data = load_market_overview_data()
+    weekly, matched, weekly_by_brand = data['weekly'], data['matched'], data['weekly_by_brand']
+
+    w0, w1 = weekly.iloc[0], weekly.iloc[-1]
+    price_delta_pct = (w1['AvgNetPrice'] - w0['AvgNetPrice']) / w0['AvgNetPrice'] * 100
+    n_series   = len(matched)
+    share_up   = (matched['PriceChange'] > 0).mean() * 100
+    share_down = (matched['PriceChange'] < 0).mean() * 100
+    overall_mean = matched['PriceChangePct'].mean()
+    asus_mean    = matched.loc[matched['Brand'] == 'Asus', 'PriceChangePct'].mean()
+
+    tabs, panels = [], []
+
+    def add_tab(tab_id, label, panel_html, is_first):
+        active  = 'active' if is_first else ''
+        display = 'block' if is_first else 'none'
+        tabs.append(f'<button class="seg-tab {active}" data-tab="MKT" data-seg="{tab_id}" '
+                    f'onclick="switchSeg(this)">{label}</button>\n')
+        panels.append(f'<div class="seg-panel" id="MKT-{tab_id}" style="display:{display}">{panel_html}</div>')
+
+    # ---- Tab 1: 整體趨勢 ----
+    trend_html = _mkt_trend_fig(weekly).to_html(full_html=False, include_plotlyjs=False,
+                                                 div_id='mkt-chart-trend', config={'responsive': True})
+    brand_trend_html = _mkt_brand_trend_fig(weekly_by_brand).to_html(
+        full_html=False, include_plotlyjs=False, div_id='mkt-chart-brandtrend', config={'responsive': True})
+    summary1 = (
+        f'<div class="sum-row"><span class="sum-label">均價變化 W{int(w0["Week"])}→W{int(w1["Week"])}</span>'
+        f'<span class="sum-val">{_mkt_pct_span(price_delta_pct)} '
+        f'(${w0["AvgNetPrice"]:,.0f} → ${w1["AvgNetPrice"]:,.0f})</span></div>'
+        f'<div class="sum-row"><span class="sum-label">促銷佔比變化</span>'
+        f'<span class="sum-val">{w1["OnPromoShare"]-w0["OnPromoShare"]:+.1f} pts '
+        f'({w0["OnPromoShare"]:.0f}% → {w1["OnPromoShare"]:.0f}%)</span></div>'
+        f'<div class="sum-row"><span class="sum-label">可比對序列數</span>'
+        f'<span class="sum-val">{n_series:,} 組（同SKU＋同通路）</span></div>'
+        f'<div class="sum-row"><span class="sum-label">漲 / 跌比例</span>'
+        f'<span class="sum-val">{share_up:.0f}% 漲 · {share_down:.0f}% 跌</span></div>'
+    )
+    panel1 = (
+        f'<div class="ov-callout">全市場均價由 W{int(w0["Week"])} 的 ${w0["AvgNetPrice"]:,.0f} '
+        f'上升至 W{int(w1["Week"])} 的 ${w1["AvgNetPrice"]:,.0f}（{_mkt_pct_span(price_delta_pct)}），'
+        f'促銷佔比同步由 {w0["OnPromoShare"]:.0f}% 升至 {w1["OnPromoShare"]:.0f}%。'
+        f'<strong>ASUS</strong> 同期同SKU平均變化為 {_mkt_pct_span(asus_mean)}，'
+        f'{"高於" if asus_mean > overall_mean else "低於"}全市場平均的 {_mkt_pct_span(overall_mean)}。</div>'
+        '<div class="panel-top">'
+        f'<div class="chart-wrap">{trend_html}</div>'
+        f'<div class="summary-wrap"><div class="sum-title">整體趨勢摘要</div>{summary1}</div>'
+        '</div>'
+        '<div class="ov-subhead">主要品牌週度均價走勢</div>'
+        f'<div class="chart-wrap" style="margin-bottom:16px">{brand_trend_html}</div>'
+    )
+    add_tab('trend', '整體趨勢', panel1, True)
+
+    # ---- Tab 2: 品牌 ----
+    g_brand = _mkt_summarize(matched, 'Brand', min_n=15)
+    chart_brand_html = _mkt_bar_fig(g_brand.index.tolist(), g_brand['MeanChangePct'].tolist()).to_html(
+        full_html=False, include_plotlyjs=False, div_id='mkt-chart-brand', config={'responsive': True})
+    top_b, bot_b = g_brand.index[0], g_brand.index[-1]
+    summary2 = (
+        f'<div class="sum-row"><span class="sum-label">漲幅最大品牌</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(top_b)}</strong> '
+        f'{_mkt_pct_span(g_brand.loc[top_b, "MeanChangePct"])}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">跌幅最大品牌</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(bot_b)}</strong> '
+        f'{_mkt_pct_span(g_brand.loc[bot_b, "MeanChangePct"])}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">ASUS</span>'
+        f'<span class="sum-val">{_mkt_pct_span(g_brand.loc["Asus", "MeanChangePct"]) if "Asus" in g_brand.index else "—"}</span></div>'
+    )
+    panel2 = (
+        '<div class="panel-top">'
+        f'<div class="chart-wrap">{chart_brand_html}</div>'
+        f'<div class="summary-wrap"><div class="sum-title">品牌摘要</div>{summary2}</div>'
+        '</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_brand, highlight={"Asus"})}</div>'
+    )
+    add_tab('brand', '品牌', panel2, False)
+
+    # ---- Tab 3: 產品類型 ----
+    g_seg  = _mkt_summarize(matched[matched['Market Segment'] != '-'], 'Market Segment', min_n=5)
+    g_form = _mkt_summarize(matched[matched['Form Factor'] != '-'], 'Form Factor', min_n=5)
+    chart_seg_html = _mkt_bar_fig(g_seg.index.tolist(), g_seg['MeanChangePct'].tolist()).to_html(
+        full_html=False, include_plotlyjs=False, div_id='mkt-chart-seg', config={'responsive': True})
+    summary3 = (
+        f'<div class="sum-row"><span class="sum-label">漲幅最大定位</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(g_seg.index[0])}</strong> '
+        f'{_mkt_pct_span(g_seg["MeanChangePct"].iloc[0])}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">Clamshell vs Convertible</span>'
+        f'<span class="sum-val">' +
+        ' · '.join(f'{idx} {_mkt_pct_span(row["MeanChangePct"])}' for idx, row in g_form.iterrows()) +
+        '</span></div>'
+    )
+    panel3 = (
+        '<div class="panel-top">'
+        f'<div class="chart-wrap">{chart_seg_html}</div>'
+        f'<div class="summary-wrap"><div class="sum-title">產品類型摘要</div>{summary3}</div>'
+        '</div>'
+        '<div class="ov-subhead">依市場定位 (Market Segment)</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_seg)}</div>'
+        '<div class="ov-subhead">依外型 (Form Factor)</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_form)}</div>'
+    )
+    add_tab('segment', '產品類型', panel3, False)
+
+    # ---- Tab 4: CPU ----
+    g_cpu_tier  = _mkt_summarize(matched[matched['CPU_Tier'] != 'Unknown'], 'CPU_Tier', min_n=5)
+    g_cpu_brand = _mkt_summarize(matched[matched['CPU_Brand'] != 'Unknown'], 'CPU_Brand', min_n=5)
+    chart_cpu_html = _mkt_bar_fig(g_cpu_tier.index.tolist(), g_cpu_tier['MeanChangePct'].tolist()).to_html(
+        full_html=False, include_plotlyjs=False, div_id='mkt-chart-cpu', config={'responsive': True})
+    summary4 = (
+        f'<div class="sum-row"><span class="sum-label">漲幅最大等級</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(g_cpu_tier.index[0])}</strong> '
+        f'{_mkt_pct_span(g_cpu_tier["MeanChangePct"].iloc[0])}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">處理器品牌</span>'
+        f'<span class="sum-val">' +
+        ' · '.join(f'{idx} {_mkt_pct_span(row["MeanChangePct"])}' for idx, row in g_cpu_brand.iterrows()) +
+        '</span></div>'
+    )
+    panel4 = (
+        '<div class="panel-top">'
+        f'<div class="chart-wrap">{chart_cpu_html}</div>'
+        f'<div class="summary-wrap"><div class="sum-title">CPU 摘要</div>{summary4}</div>'
+        '</div>'
+        '<div class="ov-subhead">依 CPU 等級</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_cpu_tier)}</div>'
+        '<div class="ov-subhead">依 CPU 品牌</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_cpu_brand)}</div>'
+    )
+    add_tab('cpu', 'CPU', panel4, False)
+
+    # ---- Tab 5: GPU ----
+    g_gpu = _mkt_summarize(matched[matched['GPU_Bucket'] != 'Unknown/None'], 'GPU_Bucket', min_n=5)
+    chart_gpu_html = _mkt_bar_fig(g_gpu.index.tolist(), g_gpu['MeanChangePct'].tolist()).to_html(
+        full_html=False, include_plotlyjs=False, div_id='mkt-chart-gpu', config={'responsive': True})
+    summary5 = (
+        f'<div class="sum-row"><span class="sum-label">漲幅最大類型</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(g_gpu.index[0])}</strong> '
+        f'{_mkt_pct_span(g_gpu["MeanChangePct"].iloc[0])}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">跌幅最大類型</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(g_gpu.index[-1])}</strong> '
+        f'{_mkt_pct_span(g_gpu["MeanChangePct"].iloc[-1])}</span></div>'
+    )
+    panel5 = (
+        '<div class="panel-top">'
+        f'<div class="chart-wrap">{chart_gpu_html}</div>'
+        f'<div class="summary-wrap"><div class="sum-title">GPU 摘要</div>{summary5}</div>'
+        '</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_gpu)}</div>'
+    )
+    add_tab('gpu', 'GPU', panel5, False)
+
+    # ---- Tab 6: ASUS 焦點 ----
+    asus_m = matched[matched['Brand'] == 'Asus']
+    g_asus_family = _mkt_summarize(asus_m, 'Product Family', min_n=5)
+    g_asus_seg    = _mkt_summarize(asus_m[asus_m['Market Segment'] != '-'], 'Market Segment', min_n=5)
+    chart_asus_html = _mkt_bar_fig(g_asus_family.index.tolist(), g_asus_family['MeanChangePct'].tolist()).to_html(
+        full_html=False, include_plotlyjs=False, div_id='mkt-chart-asusfamily', config={'responsive': True})
+
+    comp_brands = ['Asus', 'HP', 'Lenovo', 'Dell', 'Acer', 'MSI', 'Apple', 'Microsoft']
+    comp = matched[matched['Brand'].isin(comp_brands)]
+    piv = (comp.groupby(['Market Segment', 'Brand'])
+           .agg(N=('PriceChangePct', 'size'), MeanChangePct=('PriceChangePct', 'mean'))
+           .reset_index())
+    piv = piv[piv['N'] >= 8]
+    piv_table = piv.pivot(index='Brand', columns='Market Segment', values='MeanChangePct')
+    seg_order = [c for c in ['Consumer', 'Gaming', 'Business', 'Education', 'Creator', 'Commercial']
+                 if c in piv_table.columns]
+    piv_table = piv_table[seg_order].reindex([b for b in comp_brands if b in piv_table.index])
+
+    piv_head = ('<thead><tr><th class="rowlabel">品牌</th>' +
+                ''.join(f'<th>{c}</th>' for c in piv_table.columns) + '</tr></thead>')
+    piv_rows = []
+    for b, row in piv_table.iterrows():
+        hl = ' class="hl"' if b == 'Asus' else ''
+        cells = f'<tr{hl}><td class="rowlabel">{html_lib.escape(b)}</td>'
+        for c in piv_table.columns:
+            v = row[c]
+            cells += f'<td>{_mkt_pct_span(v) if pd.notna(v) else "—"}</td>'
+        cells += '</tr>'
+        piv_rows.append(cells)
+    piv_html = f'<table class="ov-table">{piv_head}<tbody>{"".join(piv_rows)}</tbody></table>'
+
+    summary6 = (
+        f'<div class="sum-row"><span class="sum-label">ASUS 整體 vs 市場</span>'
+        f'<span class="sum-val">{_mkt_pct_span(asus_mean)} vs {_mkt_pct_span(overall_mean)}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">系列漲幅最大</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(g_asus_family.index[0])}</strong> '
+        f'{_mkt_pct_span(g_asus_family["MeanChangePct"].iloc[0])}</span></div>'
+        f'<div class="sum-row"><span class="sum-label">系列跌幅最大</span>'
+        f'<span class="sum-val"><strong>{html_lib.escape(g_asus_family.index[-1])}</strong> '
+        f'{_mkt_pct_span(g_asus_family["MeanChangePct"].iloc[-1])}</span></div>'
+    )
+    panel6 = (
+        f'<div class="ov-callout">ASUS 全品牌平均價格變化為 {_mkt_pct_span(asus_mean)}，'
+        f'明顯低於全市場平均的 {_mkt_pct_span(overall_mean)}——在多數品牌持續墊高定價之際，'
+        'ASUS 是少數同期均價「不升反降」的主要品牌。</div>'
+        '<div class="panel-top">'
+        f'<div class="chart-wrap">{chart_asus_html}</div>'
+        f'<div class="summary-wrap"><div class="sum-title">ASUS 摘要</div>{summary6}</div>'
+        '</div>'
+        '<div class="ov-subhead">依市場定位</div>'
+        f'<div class="ov-tablewrap">{_mkt_table(g_asus_seg)}</div>'
+        '<div class="ov-subhead">與主要競爭品牌比較（依市場定位的平均價格變化 %）</div>'
+        f'<div class="ov-tablewrap">{piv_html}</div>'
+    )
+    add_tab('asus', 'ASUS 焦點', panel6, False)
+
+    return ''.join(tabs), ''.join(panels)
 
 
 def generate_dashboard():
@@ -501,6 +947,7 @@ def generate_dashboard():
 
     nb_tabs, nb_panels = build_panels(nb_segs, 'NB')
     nr_tabs, nr_panels = build_panels(nr_segs, 'NR')
+    mkt_tabs, mkt_panels = build_market_overview()
 
     # Extract Plotly JS once for <head> (capture all script tags, take the large one)
     _tmp_html = go.Figure().to_html(full_html=False, include_plotlyjs='inline', div_id='__tmp__')
@@ -681,6 +1128,34 @@ def generate_dashboard():
   .up      {{ color: #dc2626; font-size: 12px; font-weight: 700; line-height: 1.4; }}
   .down    {{ color: #16a34a; font-size: 12px; font-weight: 700; line-height: 1.4; }}
   .neutral {{ color: #94a3b8; font-size: 12px; font-weight: 600; }}
+
+  /* ── Market Overview tab ── */
+  .ov-tablewrap {{
+    overflow-x: auto; background: #fff; border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px;
+  }}
+  .ov-table {{ width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 640px; }}
+  .ov-table th {{
+    text-align: right; padding: 10px 12px; font-size: 10px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .05em; color: #94a3b8;
+    border-bottom: 2px solid #e2e8f0; white-space: nowrap;
+  }}
+  .ov-table th.rowlabel {{ text-align: left; }}
+  .ov-table td {{
+    padding: 8px 12px; border-bottom: 1px solid #f1f5f9; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }}
+  .ov-table td.rowlabel {{ text-align: left; font-weight: 600; color: #334155; white-space: normal; }}
+  .ov-table tr.hl {{ background: #fef2f2; }}
+  .ov-table tr.hl td.rowlabel {{ color: #dc2626; font-weight: 800; }}
+  .ov-table tbody tr:hover {{ background: #f8fafc; }}
+  .ov-callout {{
+    background: #fef2f2; border-left: 3px solid #dc2626; padding: 14px 16px;
+    border-radius: 0 8px 8px 0; margin-bottom: 16px; font-size: 13px;
+    color: #334155; line-height: 1.65;
+  }}
+  .ov-callout strong {{ color: #dc2626; }}
+  .ov-subhead {{ font-size: 12.5px; font-weight: 800; color: #334155; letter-spacing: .03em; margin: 18px 2px 8px; }}
 </style>
 </head>
 <body>
@@ -694,6 +1169,7 @@ def generate_dashboard():
   <span class="nbnr-label">Category</span>
   <button class="nbnr-btn active" onclick="switchNBNR('NB', this)">NB — Notebook</button>
   <button class="nbnr-btn"       onclick="switchNBNR('NR', this)">NR — Gaming</button>
+  <button class="nbnr-btn"       onclick="switchNBNR('MKT', this)">市場總覽 · All Brands</button>
 </div>
 
 <div class="seg-tabs-bar" id="tabs-NB">
@@ -702,6 +1178,9 @@ def generate_dashboard():
 <div class="seg-tabs-bar" id="tabs-NR" style="display:none">
 {nr_tabs}
 </div>
+<div class="seg-tabs-bar" id="tabs-MKT" style="display:none">
+{mkt_tabs}
+</div>
 
 <div class="content">
   <div class="nbnr-pane active" id="pane-NB">
@@ -709,6 +1188,9 @@ def generate_dashboard():
   </div>
   <div class="nbnr-pane" id="pane-NR">
 {nr_panels}
+  </div>
+  <div class="nbnr-pane" id="pane-MKT">
+{mkt_panels}
   </div>
 </div>
 
@@ -719,8 +1201,10 @@ function switchNBNR(type, btn) {{
   document.querySelectorAll('.nbnr-pane').forEach(p => p.classList.remove('active'));
   var pane = document.getElementById('pane-' + type);
   pane.classList.add('active');
-  document.getElementById('tabs-NB').style.display = type === 'NB' ? 'flex' : 'none';
-  document.getElementById('tabs-NR').style.display = type === 'NR' ? 'flex' : 'none';
+  ['NB', 'NR', 'MKT'].forEach(function(t) {{
+    var el = document.getElementById('tabs-' + t);
+    if (el) el.style.display = (t === type) ? 'flex' : 'none';
+  }});
   // Resize visible chart
   var visPanel = pane.querySelector('.seg-panel[style*="block"]');
   if (visPanel) visPanel.querySelectorAll('.plotly-graph-div').forEach(function(gd) {{
